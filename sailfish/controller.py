@@ -6,8 +6,16 @@ __author__ = 'Michal Januszewski'
 __email__ = 'sailfish-cfd@googlegroups.com'
 __license__ = 'LGPL3'
 
-import __builtin__
-import cPickle as pickle
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+try:
+    import __builtin__
+    builtins = __builtin__
+except ImportError:
+    import builtins
+
 import copy
 import math
 import imp
@@ -26,6 +34,7 @@ from multiprocessing import Process
 import zmq
 from sailfish import codegen, config, io, util
 from sailfish.geo import LBGeometry2D, LBGeometry3D
+from sailfish.lb_base import LBMixIn, LBForcedSim
 from sailfish.subdomain import SubdomainPair
 
 def _start_machine_master(config, subdomains, lb_class):
@@ -41,12 +50,16 @@ def _start_cluster_machine_master(channel, args, main_script, lb_class_name,
 
     This function is executed by the execnet module.  In order for it to work,
     it cannot depend on any global symbols."""
-    import cPickle as pickle
+    try:
+        import cPickle as pickle
+    except ImportError:
+        import pickle
     import os
     import platform
     import sys
     import traceback
 
+    early_termination = True
     try:
         sys.path.append(os.path.dirname(main_script))
         import imp
@@ -183,7 +196,7 @@ class LBGeometryProcessor(object):
                     continue
                 b = subdomain
                 locs = set(_pbc_helper(list(b.location), b,
-                                       range(axis, self.dim)))
+                                       list(range(axis, self.dim))))
                 locs.remove(b.location)
 
                 for loc in locs:
@@ -283,7 +296,7 @@ class LBSimulationController(object):
             type=int, default=0)
         group.add_argument('--perf_stats_every',
                            help='how often to display performance stats',
-                           metavar='N', type=int, default=0)
+                           metavar='N', type=int, default=1000)
         group.add_argument('--max_iters',
             help='number of iterations to run; use 0 to run indefinitely',
             type=int, default=0)
@@ -296,7 +309,7 @@ class LBSimulationController(object):
             type=str, default='')
         group.add_argument('--output_format',
             help='output format', type=str,
-            choices=io.format_name_to_cls.keys(), default='npy')
+            choices=list(io.format_name_to_cls.keys()), default='npy')
         group.add_argument('--nooutput_compress', dest='output_compress',
                            action='store_false', default=True,
                            help='stores the output in compressed files'
@@ -321,6 +334,14 @@ class LBSimulationController(object):
         group.add_argument('--debug_dump_node_type_map', action='store_true',
                 default=False, help='Dump the contents of the node type map '
                 'into a file'),
+        group.add_argument('--base_name', type=str, default='',
+                           help='Specifies the base file name that will be used for '
+                           'logging, checkpoint and data output. This makes it '
+                           'possible to avoid specifying --log, --output, and '
+                           '--checkpoint_file separately. Whenever some of '
+                           'these options are specified, their value takes '
+                           'precedence over the one automatically generated '
+                           'using --base_name.')
         group.add_argument('--log', type=str, default='',
                 help='name of the file to which data is to be logged')
         group.add_argument('--loglevel', type=int, default=logging.INFO,
@@ -386,10 +407,14 @@ class LBSimulationController(object):
         group.add_argument('--restore_from', type=str, metavar='PATH',
                 help='Location of a checkpoint file from which to start the '
                 'simulation.', default='')
+        group.add_argument('--norestore_time', action='store_false',
+                           dest='restore_time',
+                           default=True, help='If True, and simulation time'
+                ' will be restored when reading a checkpoint.')
         group.add_argument('--final_checkpoint', action='store_true',
                 default=False, help='Generates a checkpoint after the simulation '
                 'is completed.')
-        group.add_argument('--checkpoint_every', type=int, default=100,
+        group.add_argument('--checkpoint_every', type=int, default=0,
                 metavar='N', help='Generates a checkpoint every N steps.')
         group.add_argument('--checkpoint_from', type=int, default=0,
                 metavar='N', help='Starts generating checkpoints after N '
@@ -404,17 +429,9 @@ class LBSimulationController(object):
                            'for purposes of standard deviation calculation.')
         group = self._config_parser.add_group('Simulation-specific settings')
 
-        lb_class.add_options(group, self.dim)
-        # If the simulation class does not define an add_options method
-        # explicitly and inherits from multiple base classes, call add_options
-        # from additional bases.
-        if ('add_options' not in lb_class.__dict__ and
-            len(lb_class.__bases__) > 1):
-            first_base = lb_class.__bases__[0]
-            for base_class in lb_class.__bases__[1:]:
-                if (base_class not in first_base.mro() and
-                    'add_options' in base_class.__dict__):
-                    base_class.add_options(group, self.dim)
+        for base in lb_class.mro():
+            if 'add_options' in base.__dict__:
+                base.add_options(group, self.dim)
 
         group = self._config_parser.add_group('Geometry settings')
         lb_geo.add_options(group)
@@ -473,7 +490,7 @@ class LBSimulationController(object):
         if cluster is None:
             try:
                 cluster = imp.load_source('cluster', self.config.cluster_spec)
-            except IOError, e:
+            except IOError:
                 cluster = imp.load_source('cluster',
                         os.path.expanduser('~/.sailfish/{0}'.format(self.config.cluster_spec)))
 
@@ -505,7 +522,7 @@ class LBSimulationController(object):
             # config file.
             node_config = copy.copy(self.config)
             node_config.gpus = cluster.nodes[i].gpus
-            for k, v in node.settings.iteritems():
+            for k, v in node.settings.items():
                 setattr(node_config, k, v)
 
             self._cluster_channels.append(
@@ -521,7 +538,7 @@ class LBSimulationController(object):
             data = channel.receive()
             # If a string is received, print it to help with debugging.
             if type(data) is str:
-                print data
+                print(data)
             else:
                 ports.update(data)
 
@@ -543,8 +560,8 @@ class LBSimulationController(object):
         def _try_next_port(i, node, still_starting):
             port = node.get_port() + 1
             node.set_port(port)
-            print 'retrying node %s:%s...' % (node.host, node.addr)
-            self._node_handlers[i] = _start_socketserver(node.addr, port)
+            print('retrying node %s:%s...' % (node.host, node.addr))
+            self._node_handlers[i] = start_socketserver(node.addr, port)
             still_starting.append((i, node))
 
         starting_nodes = list(enumerate(cluster.nodes))
@@ -723,37 +740,53 @@ class LBSimulationController(object):
                 high = nodes / high * 1e-6 - total
 
                 if not self.config.quiet:
-                    print ('Subdomain {0}: MLUPS eff:{1:.2f} +{2:.2f} -{3:.2f}  '
+                    print(('Subdomain {0}: MLUPS eff:{1:.2f} +{2:.2f} -{3:.2f}  '
                            'comp:{4:.2f}'.format(ti.subdomain_id, total,
-                                                 abs(high), abs(low), comp))
+                                                 abs(high), abs(low), comp)))
 
             if not self.config.quiet:
-                print ('Total MLUPS: eff:{0:.2f}  comp:{1:.2f}'.format(
-                        mlups_total,  mlups_comp))
+                print(('Total MLUPS: eff:{0:.2f}  comp:{1:.2f}'.format(
+                        mlups_total,  mlups_comp)))
             return timing_infos, min_timings, max_timings, subdomains
 
         return None, None
 
     def save_subdomain_config(self, subdomains):
         if self.config.output:
-            pickle.dump(subdomains,
-                    open(io.subdomains_filename(self.config.output), 'w'))
+            dname = os.path.dirname(self.config.output)
+            if dname and not os.path.exists(dname):
+                os.makedirs(dname)
+            with open(io.subdomains_filename(self.config.output), 'wb') as f:
+                pickle.dump(subdomains, f)
+
+    def set_default_filenames(self):
+        if not self.config.base_name:
+            return
+
+        if not self.config.log:
+            self.config.log = self.config.base_name + '.log'
+        if not self.config.output:
+            self.config.output = self.config.base_name
+        if not self.config.checkpoint_file:
+            self.config.checkpoint_file = self.config.base_name
 
     def run(self, ignore_cmdline=False):
         """Runs a simulation."""
 
         # No point in trying to process the command-line if running under
         # IPython.
-        if ignore_cmdline or hasattr(__builtin__, '__IPYTHON__'):
+        if ignore_cmdline or hasattr(builtins, '__IPYTHON__'):
             args = []
         else:
             args = sys.argv[1:]
 
         self.config = self._config_parser.parse(
             args, internal_defaults={'quiet': True} if hasattr(
-                __builtin__, '__IPYTHON__') else None)
+                builtins, '__IPYTHON__') else None)
 
         self._lb_class.modify_config(self.config)
+        self.set_default_filenames()
+
         self.geo = self._lb_geo(self.config)
 
         ctx = zmq.Context()
@@ -773,5 +806,6 @@ class LBSimulationController(object):
         subdomain_specs = proc.transform(self.config)
         self.save_subdomain_config(subdomain_specs)
 
+        self.config.cmdline = ' '.join(sys.argv)
         self._start_simulation(subdomain_specs)
         return self._finish_simulation(subdomain_specs, summary_receiver)

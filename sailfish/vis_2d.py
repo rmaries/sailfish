@@ -10,7 +10,7 @@ import os
 import numpy as np
 import pygame
 
-from sailfish import lb_base, node_type, util, vis
+from sailfish import node_type, util, vis
 
 def _font_name():
     import platform
@@ -149,6 +149,10 @@ class Fluid2DVis(vis.FluidVis):
 
     def __init__(self, config, subdomains, quit_event, sim_quit_event,
                  vis_config, geo_queues=None):
+        """
+        Args:
+          subdomains: iterable of SubdomainSpec objects
+        """
         pygame.init()
         pygame.font.init()
         pygame.surfarray.use_arraytype('numpy')
@@ -269,8 +273,8 @@ class Fluid2DVis(vis.FluidVis):
         return srf, v_min, v_max
 
     def _get_loc(self, event, subdomain):
-        x = event.pos[0] * subdomain.nx / self._screen.get_width()
-        y = subdomain.ny - 1 - (event.pos[1] * subdomain.ny / self._screen.get_height())
+        x = event.pos[0] * subdomain.nx // self._screen.get_width()
+        y = subdomain.ny - 1 - (event.pos[1] * subdomain.ny // self._screen.get_height())
         return min(max(x, 0), subdomain.nx-1), min(max(y, 0), subdomain.ny-1)
 
     def _process_misc_event(self, event):
@@ -325,15 +329,15 @@ class Fluid2DVis(vis.FluidVis):
                 elif event.key == pygame.K_LEFTBRACKET:
                     #n = len(self.field.vals)
                     n = 1
-                    idx = cmaps[n].keys().index(self._cmap[n]) - 1
-                    idx %= len(cmaps[n].keys())
-                    self._cmap[n] = cmaps[n].keys()[idx]
+                    idx = list(cmaps[n].keys()).index(self._cmap[n]) - 1
+                    idx %= len(list(cmaps[n].keys()))
+                    self._cmap[n] = list(cmaps[n].keys())[idx]
                 elif event.key == pygame.K_RIGHTBRACKET:
                     #n = len(self.field.vals)
                     n = 1
-                    idx = cmaps[n].keys().index(self._cmap[n]) + 1
-                    idx %= len(cmaps[n].keys())
-                    self._cmap[n] = cmaps[n].keys()[idx]
+                    idx = list(cmaps[n].keys()).index(self._cmap[n]) + 1
+                    idx %= len(list(cmaps[n].keys()))
+                    self._cmap[n] = list(cmaps[n].keys())[idx]
 #                elif event.key == pygame.K_v:
 #                    self._velocity = not self._velocity
                 elif event.key == pygame.K_q:
@@ -348,10 +352,10 @@ class Fluid2DVis(vis.FluidVis):
 
                     fname = '%s_%05d.png' % (self.sim.filename, i)
                     if os.path.exists(fname):
-                        print 'Could not create screenshot.'
+                        print('Could not create screenshot.')
 
                     pygame.image.save(self._screen, fname)
-                    print 'Saved %s.' % fname
+                    print('Saved %s.' % fname)
                 elif event.key == pygame.K_i:
                     self._show_info = not self._show_info
 
@@ -367,7 +371,7 @@ class Fluid2DVis(vis.FluidVis):
             ret = self._visualize()
 
             if self._show_info:
-                self._screen.blit(self._font.render('itr: %dk' % (curr_iter /
+                self._screen.blit(self._font.render('itr: %dk' % (curr_iter //
                     1000), True, (0, 255, 0)), (12, 12))
 
                 y = 28

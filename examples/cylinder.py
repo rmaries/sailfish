@@ -1,4 +1,9 @@
 #!/usr/bin/env python -u
+"""
+Simulates the flow around a 2D cylinder.
+
+The flow is periodic and driven by a body force.
+"""
 
 import numpy as np
 from sailfish.geo import EqualSubdomainsGeometry2D
@@ -49,9 +54,6 @@ class CylinderSimulation(LBFluidSim, LBForcedSim):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBFluidSim.add_options(group, dim)
-        LBForcedSim.add_options(group, dim)
-
         group.add_argument('--vertical', action='store_true')
 
     @classmethod

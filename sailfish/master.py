@@ -8,15 +8,13 @@ __license__ = 'LGPL3'
 
 import atexit
 import ctypes
-import logging
-import operator
 import os
 import subprocess
 import tempfile
 import time
 
 import multiprocessing as mp
-from multiprocessing import Process, Array, Event, Value
+from multiprocessing import Process, Event, Value
 
 import zmq
 
@@ -29,7 +27,7 @@ def _start_subdomain_runner(subdomain_spec, config, sim, num_subdomains,
     """
     :param num_subdomains: number of subdomains handled by this machine
     """
-    config.logger.debug('SubdomainRunner starting with PID {0}'.format(os.getpid()))
+    config.logger.info('SubdomainRunner starting with PID {0}'.format(os.getpid()))
     # Make sure each subdomain has its own temporary directory.  This is
     # particularly important with Numpy 1.3.0, where there is a race
     # condition when saving npz files.
@@ -185,6 +183,8 @@ class LBMachineMaster(object):
         if self.config.output:
             output_cls = io.format_name_to_cls[self.config.output_format]
         else:
+            # Dummy output class. Does not actually save data, but does provide
+            # utility functions common to all output classes.
             output_cls = io.LBOutput
 
         if self.config.mode != 'visualization':
@@ -212,7 +212,7 @@ class LBMachineMaster(object):
             self.config.logger.warning('Requested visualization engine not '
                                        'available.')
             try:
-                vis_class = util.get_visualization_engines().next()
+                vis_class = next(util.get_visualization_engines())
             except StopIteration:
                 self.config.logger.warning(
                     'No visualization backends available. Falling back to '
@@ -314,6 +314,7 @@ class LBMachineMaster(object):
     def run(self):
         self.config.logger.info('Machine master starting with PID {0} at {1}'.format(
             os.getpid(), time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())))
+        self.config.logger.info('Simulation started with: {0}'.format(self.config.cmdline))
 
         # Log Sailfish version if running from a git repository.
         sailfish_root_dir = os.path.join(os.path.realpath(
@@ -336,11 +337,13 @@ class LBMachineMaster(object):
         ipc_files = self._init_connectors()
         output_initializer = self._init_visualization_and_io(self.sim)
         try:
-            backend_cls = util.get_backends(self.config.backends.split(',')).next()
+            backend_cls = next(util.get_backends(self.config.backends.split(',')))
         except StopIteration:
             self.config.logger.error('Failed to initialize compute backend.'
                     ' Make sure pycuda/pyopencl is installed.')
             return
+
+        self.config.logger.info('Selected backend: {0}'.format(backend_cls.name))
 
         if self.config.debug_single_process:
             assert len(self.subdomain_specs) == 1, ('Only a single subdomain can be'

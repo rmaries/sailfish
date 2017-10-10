@@ -12,6 +12,7 @@ The results can be compared with:
     based on two different methods: lattice-Boltzmann and finite-volume
     Int. J. of Heat and Fluid Flow 21 (2000) 186-196.
 """
+from __future__ import print_function
 
 import numpy as np
 from sailfish.subdomain import Subdomain2D
@@ -83,16 +84,15 @@ class BoxSimulation(LBFluidSim):
             (L / 4 - D / 2 - margin, (H - D) / 2 - margin),
             (L / 4 + D / 2 + margin, (H + D) / 2 + margin)))
 
-        print '%d x %d | box: %d' % (L, H, D)
-        print 'Re = %2.f' % (BoxSubdomain.max_v * D / self.config.visc)
+        print('%d x %d | box: %d' % (L, H, D))
+        print('Re = %2.f' % (BoxSubdomain.max_v * D / self.config.visc))
 
     def record_value(self, iteration, force, C_D, C_L):
-        print iteration, force[0], force[1], C_D, C_L
+        print(iteration, force[0], force[1], C_D, C_L)
 
     prev_f = None
     every = 500
     def after_step(self, runner):
-
         if self.iteration % self.every == 0:
             runner.update_force_objects()
             for fo in self.force_objects:
@@ -116,7 +116,6 @@ class BoxSimulation(LBFluidSim):
                     if np.all(diff < 1e-6):
                         runner._quit_event.set()
                     self.prev_f = f
-
 
 
 if __name__ == '__main__':

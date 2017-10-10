@@ -15,7 +15,7 @@ class LBTernaryFluidBase(LBSim):
     """Base class for ternary fluid simulations."""
 
     subdomain_runner = subdomain_runner.NNSubdomainRunner
-    kernel_file = 'ternary_fluid.mako'
+    kernel_file = 'models/lb_ternary_fluid.mako'
     nonlocality = 1
 
     def __init__(self, config):
@@ -26,7 +26,6 @@ class LBTernaryFluidBase(LBSim):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBSim.add_options(group, dim)
         group.add_argument('--tau_phi', type=float, default=1.0,
                 help='relaxation time for the phase field 1 ')
         group.add_argument('--tau_theta', type=float, default=1.0,
@@ -194,9 +193,6 @@ class LBTernaryFluidShanChen(LBTernaryFluidBase, LBForcedSim):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBForcedSim.add_options(group, dim)
-        LBTernaryFluidBase.add_options(group, dim)
-
         group.add_argument('--visc', type=float, default=1.0, help='numerical viscosity')
         group.add_argument('--G11', type=float, default=0.0,
                 help='Shan-Chen component 1 self-interaction strength constant')
@@ -234,7 +230,7 @@ class LBTernaryFluidShanChen(LBTernaryFluidBase, LBForcedSim):
         gpu_dist2b = runner.gpu_dist(1, 1)
         gpu_dist3a = runner.gpu_dist(2, 0)
         gpu_dist3b = runner.gpu_dist(2, 1)
-        
+
         options = 0
         if full_output:
             options |= 1
@@ -334,4 +330,4 @@ class LBTernaryFluidShanChen(LBTernaryFluidBase, LBForcedSim):
         else:
             sim_pair = KernelPair(primary, primary)
 
-        return zip(macro_pair, sim_pair)
+        return list(zip(macro_pair, sim_pair))

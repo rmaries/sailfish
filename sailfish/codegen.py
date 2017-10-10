@@ -1,10 +1,12 @@
 """Run-time CUDA/OpenCL code generation."""
+from __future__ import print_function
 
 __author__ = 'Michal Januszewski'
 __email__ = 'sailfish-cfd@googlegroups.com'
 __license__ = 'LGPL3'
 
 import os
+import re
 import sys
 import tempfile
 import mako.exceptions
@@ -34,6 +36,9 @@ def _remove_math_function_suffix(t):
     t = t.replace('cosf(', 'cos(')
     t = t.replace('tanhf(', 'tan(')
     return t
+
+def _remove_printf_calls(t):
+    return re.sub('printf([^;]*);', '', t)
 
 def _use_intrinsics(t):
     t = t.replace('logf(', '__logf(')
@@ -131,7 +136,7 @@ class BlockCodeGenerator(object):
         try:
             src = code_tmpl.render(**ctx)
         except:
-            print mako.exceptions.text_error_template().render()
+            print(mako.exceptions.text_error_template().render())
             return ''
 
         aux_sources = list(self._sim.aux_code)
@@ -151,7 +156,7 @@ class BlockCodeGenerator(object):
             try:
                 src += '\n' + code_tmpl.render(**ctx)
             except:
-                print mako.exceptions.text_error_template().render()
+                print(mako.exceptions.text_error_template().render())
                 return ''
 
         if self.is_double_precision():
@@ -163,6 +168,7 @@ class BlockCodeGenerator(object):
         # TODO(michalj): Consider using native_ or half_ functions here.
         if target_type == 'opencl':
             src = _remove_math_function_suffix(src)
+            src = _remove_printf_calls(src)
 
         if self.config.save_src:
             self.save_code(src,
@@ -174,7 +180,7 @@ class BlockCodeGenerator(object):
 
     def save_code(self, code, dest_path, reformat=True):
         with open(dest_path, 'w') as fsrc:
-            print >>fsrc, code
+            print(code, file=fsrc)
 
         if reformat:
             os.system(self._format_cmd.format(

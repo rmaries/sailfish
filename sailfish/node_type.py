@@ -55,6 +55,9 @@ class LBNodeType(object):
     #: domain.
     location = 0.0
 
+    #: If True, the node can be marked as unused. Only valid for wet nodes.
+    allow_unused = False
+
     def __init__(self, **params):
         if 'orientation' in params:
             self.orientation = params['orientation']
@@ -134,6 +137,7 @@ class NTHalfBBWall(LBNodeType):
     needs_orientation = True
     link_tags = True
     location = -0.5
+    allow_unused = True
 
 
 class NTFullBBWall(LBNodeType):
@@ -175,7 +179,8 @@ class NTWallTMS(LBNodeType):
     wet_node = True
     needs_orientation = True
     link_tags = True
-    location = -0.5
+    location = 0.5
+    allow_unused = True
 
     # This will cause the standard procedure to compute the instantaneous u and
     # rho as defined in the paper.
@@ -345,7 +350,7 @@ class NTNeumann(LBNodeType):
     via:
         .. math:: \phi(t, x_{j0}) = u(t, x_{j1}) + 2 \\varphi (t, x_j)
         .. math:: f_i(t+1, x_{j0}) = f_{\mathrm{\\bar{i}}}^c(t, x_{j0} + c_i) +
-                      6 f^{\mathrm{eq}}_i (u(t, x_{j1}) + 2\phi(t, x_{j0})) \cdot c_i
+                      6 w_i \phi(t, x_{j0}) \cdot c_i
     with:
 
      * :math:`x_j`: boundary node
@@ -353,9 +358,12 @@ class NTNeumann(LBNodeType):
      * :math:`x_{j1}`: fluid node at :math:`x_{j0}` - 2 * normal
      * :math:`c_i`: incoming distributions
      * :math:`\\bar{i}`: direction opposite to i
-     * :math:`f^{\mathrm{eq}}_i`: :math:`f^{\mathrm{eq}}_i(1, 0)`
      * :math:`f_i^c`: distribution after collision (prior to streaming)
     """
+    wet_node = True
+    standard_macro = True
+    needs_orientation = True
+
 
 ############################################################################
 # Other nodes.
@@ -382,17 +390,18 @@ def __init_node_type_list():
 
     return dict([(node_type.id, node_type) for node_type in ret])
 
-def get_wet_node_type_ids():
-    return [id for id, nt in _NODE_TYPES.iteritems() if nt.wet_node]
+def get_wet_node_type_ids(allow_unused=None):
+    return [id for id, nt in _NODE_TYPES.items() if nt.wet_node and
+            (allow_unused is None or nt.allow_unused == allow_unused)]
 
 def get_dry_node_type_ids():
-    return [id for id, nt in _NODE_TYPES.iteritems() if not nt.wet_node]
+    return [id for id, nt in _NODE_TYPES.items() if not nt.wet_node]
 
 def get_orientation_node_type_ids():
-    return [id for id, nt in _NODE_TYPES.iteritems() if nt.needs_orientation]
+    return [id for id, nt in _NODE_TYPES.items() if nt.needs_orientation]
 
 def get_link_tag_node_type_ids():
-    return [id for id, nt in _NODE_TYPES.iteritems() if nt.link_tags]
+    return [id for id, nt in _NODE_TYPES.items() if nt.link_tags]
 
 def multifield(values, where=None):
     """Collapses a list of numpy arrays into a structured field that can be
@@ -456,6 +465,9 @@ class DynamicValue(object):
         else:
             return 1
 
+    def __str__(self):
+        return 'DynamicValue(' + ', '.join(str(x) for x in self.params) + ')'
+
     def __getitem__(self, i):
         return self.params[i]
 
@@ -464,7 +476,7 @@ class DynamicValue(object):
         depends on at least one of the symbols provided as arguments."""
         for symbol in args:
             for param in self.params:
-                if isinstance(param, expr.Expr) and symbol in param:
+                if isinstance(param, expr.Expr) and symbol in param.free_symbols:
                     return True
         return False
 
@@ -489,7 +501,7 @@ class LinearlyInterpolatedTimeSeries(Symbol):
                                                   step_size))
 
     def __init__(self, data, step_size=1.0):
-        """A continous scalar data source from a discrete time series.
+        """A continuous scalar data source from a discrete time series.
 
         Time series data points are linearly interpolated in order to generate
         values for points not present in the time series. The time series is
@@ -504,7 +516,10 @@ class LinearlyInterpolatedTimeSeries(Symbol):
         if type(data) is list or type(data) is tuple:
             data = np.float64(data)
 
-        self._data = data
+        # Copy here is necessary so that the caller doesn't accidentally change
+        # the underlying array later. Also, we need the array to be C-contiguous
+        # (for __hash__ below), which might not be the case if it's a view.
+        self._data = data.copy()
         self._step_size = step_size
 
         # To be set later by the geometry encoder class. This is necessary due
@@ -512,7 +527,7 @@ class LinearlyInterpolatedTimeSeries(Symbol):
         self._offset = None
 
     def __hash__(self):
-        return (hash(hashlib.sha1(str(self._step_size)).digest()) ^
+        return (hash(hashlib.sha1(str(self._step_size).encode('ascii')).digest()) ^
                 hash(hashlib.sha1(self._data).digest()))
 
     def __str__(self):

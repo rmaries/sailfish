@@ -15,7 +15,7 @@ class LBBinaryFluidBase(LBSim):
     """Base class for binary fluid simulations."""
 
     subdomain_runner = subdomain_runner.NNSubdomainRunner
-    kernel_file = 'binary_fluid.mako'
+    kernel_file = 'models/lb_binary_fluid.mako'
     nonlocality = 1
 
     def __init__(self, config):
@@ -25,7 +25,6 @@ class LBBinaryFluidBase(LBSim):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBSim.add_options(group, dim)
         group.add_argument('--tau_phi', type=float, default=1.0,
                 help='relaxation time for the phase field')
 
@@ -159,8 +158,6 @@ class LBBinaryFluidFreeEnergy(LBBinaryFluidBase):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBBinaryFluidBase.add_options(group, dim)
-
         group.add_argument('--bc_wall_grad_phase', type=float, default=0.0,
                 help='gradient of the phase field at the wall; '
                     'this determines the wetting properties')
@@ -372,7 +369,7 @@ class LBBinaryFluidFreeEnergy(LBBinaryFluidBase):
         else:
             sim_pair = KernelPair(primary, primary)
 
-        return zip(macro_pair, sim_pair)
+        return list(zip(macro_pair, sim_pair))
 
 
 class LBBinaryFluidShanChen(LBBinaryFluidBase, LBForcedSim):
@@ -405,9 +402,6 @@ class LBBinaryFluidShanChen(LBBinaryFluidBase, LBForcedSim):
 
     @classmethod
     def add_options(cls, group, dim):
-        LBForcedSim.add_options(group, dim)
-        LBBinaryFluidBase.add_options(group, dim)
-
         group.add_argument('--visc', type=float, default=1.0, help='numerical viscosity')
         group.add_argument('--G11', type=float, default=0.0,
                 help='Shan-Chen component 1 self-interaction strength constant')
@@ -520,4 +514,4 @@ class LBBinaryFluidShanChen(LBBinaryFluidBase, LBForcedSim):
         else:
             sim_pair = KernelPair(primary, primary)
 
-        return zip(macro_pair, sim_pair)
+        return list(zip(macro_pair, sim_pair))

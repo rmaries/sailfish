@@ -4,18 +4,16 @@ __author__ = 'Michal Januszewski'
 __email__ = 'sailfish-cfd@googlegroups.com'
 __license__ = 'LGPL3'
 
+# Make sure the pyopencl module exists, but do not import it.
+import imp
+from functools import reduce
+imp.find_module('pyopencl')
 import operator
 import os
-import pyopencl as cl
-import pyopencl.array as clarray
-import pyopencl.reduction as reduction
-import pyopencl.tools
 import numpy as np
 
 class OpenCLBackend(object):
     name ='opencl'
-    array = clarray
-    FatalError = pyopencl.RuntimeError
 
     @classmethod
     def add_options(cls, group):
@@ -30,6 +28,20 @@ class OpenCLBackend(object):
 
         :param gpu_id: number of the GPU to use
         """
+        # Late import of the pyopencl module and setup of related instance
+        # attributes. This is necesary because of
+        # http://lists.tiker.net/pipermail/pyopencl/2014-August/001798.html
+        import pyopencl as cl
+        import pyopencl.array as clarray
+        import pyopencl.reduction as reduction
+        import pyopencl.tools
+        globals()['cl'] = cl
+        globals()['clarray'] = clarray
+        globals()['reduction'] = reduction
+        globals()['pyopencl.tools'] = pyopencl.tools
+        self.array = clarray
+        self.FatalError = pyopencl.RuntimeError
+
         if options.opencl_interactive:
             self.ctx = cl.create_some_context(True)
         else:
@@ -47,6 +59,7 @@ class OpenCLBackend(object):
         self.buffers = {}
         self.arrays = {}
         self._iteration_kernels = []
+        self.config = options
 
     @property
     def info(self):
@@ -82,6 +95,13 @@ class OpenCLBackend(object):
     def alloc_async_host_buf(self, shape, dtype):
         """Allocates a buffer that can be used for asynchronous data
         transfers."""
+        return np.zeros(shape, dtype=dtype)
+
+        # Note: it looks like as of mid 2014, PyOpenCL no longer allows the use
+        # of ALLOC_HOST_PTR. For now, we just return a standard numpy array,
+        # which however will not be page-locked and thus performance might
+        # suffer.
+
         mf = cl.mem_flags
         # OpenCL does not offer direct control over how memory is allocated,
         # but ALLOC_HOST_PTR is supposed to prefer pinned memory.
@@ -134,7 +154,9 @@ class OpenCLBackend(object):
                 is_blocking=False)
 
     def build(self, source):
-        preamble = '#pragma OPENCL EXTENSION cl_khr_fp64: enable\n'
+        preamble = ''
+        if self.config.precision == 'double':
+            preamble += '#pragma OPENCL EXTENSION cl_khr_fp64: enable\n'
         return cl.Program(self.ctx, preamble + source).build() #'-cl-single-precision-constant -cl-fast-relaxed-math')
 
     def get_kernel(self, prog, name, block, args, args_format, shared=0,
@@ -190,7 +212,7 @@ class OpenCLBackend(object):
 
     def make_stream(self):
         return StreamWrapper(cl.CommandQueue(self.ctx,
-            properties=cl.command_queue_properties.PROFILING_ENABLE))
+                properties=cl.command_queue_properties.PROFILING_ENABLE))
 
     def make_event(self, stream, timing=False):
         return EventWrapper(cl.enqueue_marker(stream.queue))
@@ -199,6 +221,7 @@ class OpenCLBackend(object):
         return {
             # FIXME
             'warp_size': 32,
+            'backend': 'opencl',
             'supports_shuffle': False,
             'supports_printf': False,
             'shared_var': '__local',
@@ -207,6 +230,7 @@ class OpenCLBackend(object):
             'const_ptr': '',
             'device_func': '',
             'const_var': '__constant',
+            'barrier_needs_all_threads': True,
         }
 
     def sync_stream(self, *streams):
@@ -228,7 +252,7 @@ class StreamWrapper(object):
         self.queue = cmd_queue
 
     def wait_for_event(self, event):
-        cl.enqueue_wait_for_events(self.queue, [event.event])
+        cl.enqueue_marker(self.queue, [event.event])
 
     def synchronize(self):
         self.queue.finish()

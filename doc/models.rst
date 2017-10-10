@@ -32,7 +32,7 @@ Supported features and models
 |                           +----------------------------------------+
 |                           | shallow water                          |
 |                           +----------------------------------------+
-|                           | incompressible LBGK                    |
+|                           | incompressible LBGK [JCP97]            |
 +---------------------------+----------------------------------------+
 | other features            | round-off minimization model           |
 |                           +----------------------------------------+
@@ -64,10 +64,11 @@ Supported features and models
 |                           | 1D profiles of correlations of         |
 |                           | velocity components and density        |
 |                           +----------------------------------------+
-|                           | total kientic energy and enstrophy     |
+|                           | total kinetic energy and enstrophy     |
 +---------------------------+----------------------------------------+
 
 .. [PRE78] Contact line dynamics in binary lattice Boltzmann simulations, Phys. Rev. E 78, 056709 (2008). DOI: 10.1103/PhysRevE.78.056709
+.. [JCP97] He, Xiaoyi, and Li-Shi Luo. "Lattice Boltzmann model for the incompressible Navier–Stokes equation." Journal of Statistical Physics 88.3-4 (1997): 927-944.
 
 Boundary conditions
 -------------------
